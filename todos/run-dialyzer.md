@@ -4,6 +4,13 @@ autofix_class: manual
 owner: downstream-resolver
 requires_verification: true
 title: Run mix dialyzer to verify PLT-clean against the new Plane modules
+status: resolved
+resolved_at: 2026-05-02
+outcome: |
+  Built the PLT (~30s) and ran `mix dialyzer --format short`. Result: "Total errors: 0, Skipped: 0,
+  Unnecessary Skips: 0 — done (passed successfully)". All three new @specs on
+  SymphonyElixir.Plane.Adapter (start_link/1, reset_cache/0, markdown_to_html/1) are PLT-clean.
+  Re-ran dialyzer after the cache_get nil-sentinel fix — still 0 errors.
 ---
 
 # Run mix dialyzer

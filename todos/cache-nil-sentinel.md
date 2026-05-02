@@ -4,6 +4,14 @@ autofix_class: gated_auto
 owner: downstream-resolver
 requires_verification: false
 title: Plane.Adapter cache treats nil values as cache misses (perf only)
+status: resolved
+resolved_at: 2026-05-02
+outcome: |
+  Applied the suggested Map.fetch/2 sentinel fix in elixir/lib/symphony_elixir/plane/adapter.ex.
+  The {:ok, nil} case for "no module configured" now hits the cache as documented. All 301 tests
+  still pass; dialyzer 0 errors; lint + format clean. Existing tests already call reset_cache()
+  after env mutations so the documented contract change (env vars now require reset_cache) is a
+  no-op for the test suite and the runtime contract is unchanged.
 ---
 
 # Plane.Adapter cache treats nil values as cache misses
