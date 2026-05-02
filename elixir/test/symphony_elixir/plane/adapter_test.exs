@@ -17,20 +17,24 @@ defmodule SymphonyElixir.Plane.AdapterTest do
     def list_states(project_id) do
       send(self(), {:list_states_called, project_id})
 
-      get_result(:list_states,
+      get_result(
+        :list_states,
         {:ok,
          [
            %{"id" => "todo-uuid", "name" => "Todo"},
            %{"id" => "ip-uuid", "name" => "In Progress"},
            %{"id" => "done-uuid", "name" => "Done"}
-         ]})
+         ]}
+      )
     end
 
     def list_labels(project_id) do
       send(self(), {:list_labels_called, project_id})
 
-      get_result(:list_labels,
-        {:ok, [%{"id" => "label-1", "name" => "bug"}]})
+      get_result(
+        :list_labels,
+        {:ok, [%{"id" => "label-1", "name" => "bug"}]}
+      )
     end
 
     def list_modules(project_id) do
@@ -46,7 +50,8 @@ defmodule SymphonyElixir.Plane.AdapterTest do
     def list_work_items(project_id, opts) do
       send(self(), {:list_work_items_called, project_id, opts})
 
-      get_result(:list_work_items,
+      get_result(
+        :list_work_items,
         {:ok,
          [
            %{
@@ -58,13 +63,15 @@ defmodule SymphonyElixir.Plane.AdapterTest do
              "label_ids" => ["label-1"],
              "assignees" => ["assignee-1"]
            }
-         ]})
+         ]}
+      )
     end
 
     def get_work_item(project_id, work_item_id) do
       send(self(), {:get_work_item_called, project_id, work_item_id})
 
-      get_result(:get_work_item,
+      get_result(
+        :get_work_item,
         {:ok,
          %{
            "id" => work_item_id,
@@ -72,7 +79,8 @@ defmodule SymphonyElixir.Plane.AdapterTest do
            "name" => "Issue #{work_item_id}",
            "priority" => "medium",
            "state" => "ip-uuid"
-         }})
+         }}
+      )
     end
 
     def state_id_by_name(project_id, state_name) do

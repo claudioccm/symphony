@@ -49,15 +49,8 @@ defmodule SymphonyElixir.Plane.Client do
   @doc "Resolve a project UUID by its short identifier (e.g. \"CCM\")."
   @spec project_id_by_identifier(String.t()) :: {:ok, String.t()} | {:error, :not_found}
   def project_id_by_identifier(identifier) do
-    case list_projects() do
-      {:ok, projects} ->
-        case Enum.find(projects, fn p -> Map.get(p, "identifier") == identifier end) do
-          nil -> {:error, :not_found}
-          %{"id" => id} -> {:ok, id}
-        end
-
-      err ->
-        err
+    with {:ok, projects} <- list_projects() do
+      find_id_by(projects, "identifier", identifier)
     end
   end
 
@@ -85,15 +78,8 @@ defmodule SymphonyElixir.Plane.Client do
   @doc "Resolve a module UUID by its name within a project."
   @spec module_id_by_name(String.t(), String.t()) :: {:ok, String.t()} | {:error, :not_found}
   def module_id_by_name(project_id, name) do
-    case list_modules(project_id) do
-      {:ok, modules} ->
-        case Enum.find(modules, fn m -> Map.get(m, "name") == name end) do
-          nil -> {:error, :not_found}
-          %{"id" => id} -> {:ok, id}
-        end
-
-      err ->
-        err
+    with {:ok, modules} <- list_modules(project_id) do
+      find_id_by(modules, "name", name)
     end
   end
 
@@ -108,26 +94,10 @@ defmodule SymphonyElixir.Plane.Client do
   @spec list_module_work_items(String.t(), String.t(), [String.t()]) ::
           {:ok, [map()]} | {:error, term()}
   def list_module_work_items(project_id, module_id, state_names \\ []) do
-    state_query =
-      case state_names do
-        [] ->
-          ""
+    query = build_query(project_id, state_names)
 
-        names ->
-          with {:ok, states} <- list_states(project_id) do
-            states
-            |> Enum.filter(fn s -> Map.get(s, "name") in names end)
-            |> Enum.map(&"state=#{&1["id"]}")
-            |> Enum.join("&")
-          else
-            _ -> ""
-          end
-      end
-
-    parts = ["per_page=#{@per_page}", state_query] |> Enum.reject(&(&1 == ""))
-    query = "?" <> Enum.join(parts, "&")
-
-    get(ws_url("/projects/#{project_id}/modules/#{module_id}/module-issues/#{query}"))
+    ws_url("/projects/#{project_id}/modules/#{module_id}/module-issues/#{query}")
+    |> get()
     |> map_results()
   end
 
@@ -170,27 +140,33 @@ defmodule SymphonyElixir.Plane.Client do
   end
 
   defp list_work_items_unscoped(project_id, state_names) do
-    state_query =
-      case state_names do
-        [] ->
-          ""
+    query = build_query(project_id, state_names)
 
-        names ->
-          with {:ok, states} <- list_states(project_id) do
-            states
-            |> Enum.filter(fn s -> Map.get(s, "name") in names end)
-            |> Enum.map(&"state=#{&1["id"]}")
-            |> Enum.join("&")
-          else
-            _ -> ""
-          end
-      end
-
-    parts = ["per_page=#{@per_page}", state_query] |> Enum.reject(&(&1 == ""))
-    query = "?" <> Enum.join(parts, "&")
-
-    get(ws_url("/projects/#{project_id}/work-items/#{query}"))
+    ws_url("/projects/#{project_id}/work-items/#{query}")
+    |> get()
     |> map_results()
+  end
+
+  # Builds a `?per_page=...&state=<uuid>...` query string. Resolves state names to UUIDs by
+  # listing project states; on lookup failure, drops the state filter rather than raising.
+  defp build_query(project_id, state_names) do
+    state_query = state_query_string(project_id, state_names)
+    parts = Enum.reject(["per_page=#{@per_page}", state_query], &(&1 == ""))
+    "?" <> Enum.join(parts, "&")
+  end
+
+  defp state_query_string(_project_id, []), do: ""
+
+  defp state_query_string(project_id, names) do
+    case list_states(project_id) do
+      {:ok, states} ->
+        states
+        |> Enum.filter(fn s -> Map.get(s, "name") in names end)
+        |> Enum.map_join("&", &"state=#{&1["id"]}")
+
+      _ ->
+        ""
+    end
   end
 
   @doc "Fetch a single work item by UUID."
@@ -217,15 +193,15 @@ defmodule SymphonyElixir.Plane.Client do
   @doc "Resolve a state UUID by name within a project."
   @spec state_id_by_name(String.t(), String.t()) :: {:ok, String.t()} | {:error, :not_found}
   def state_id_by_name(project_id, name) do
-    case list_states(project_id) do
-      {:ok, states} ->
-        case Enum.find(states, fn s -> Map.get(s, "name") == name end) do
-          nil -> {:error, :not_found}
-          %{"id" => id} -> {:ok, id}
-        end
+    with {:ok, states} <- list_states(project_id) do
+      find_id_by(states, "name", name)
+    end
+  end
 
-      err ->
-        err
+  defp find_id_by(items, key, value) do
+    case Enum.find(items, fn item -> Map.get(item, key) == value end) do
+      nil -> {:error, :not_found}
+      %{"id" => id} -> {:ok, id}
     end
   end
 

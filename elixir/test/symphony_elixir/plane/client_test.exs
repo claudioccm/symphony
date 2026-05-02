@@ -30,14 +30,17 @@ defmodule SymphonyElixir.Plane.ClientTest do
     Req.Test.stub(@stub_name, fn conn ->
       {:ok, raw_body, conn} = Plug.Conn.read_body(conn)
 
-      send(test_pid, {:captured,
-        %{
-          method: conn.method,
-          path: conn.request_path,
-          query: conn.query_string,
-          headers: conn.req_headers,
-          body: raw_body
-        }})
+      send(
+        test_pid,
+        {:captured,
+         %{
+           method: conn.method,
+           path: conn.request_path,
+           query: conn.query_string,
+           headers: conn.req_headers,
+           body: raw_body
+         }}
+      )
 
       Req.Test.json(conn, response_body)
     end)
@@ -57,29 +60,27 @@ defmodule SymphonyElixir.Plane.ClientTest do
   describe "list_module_work_items/3 — module-scoping path (Plane API quirk #1 regression guard)" do
     test "uses /modules/<MID>/module-issues/ NOT /work-items/ when scoping to a module" do
       Req.Test.stub(@stub_name, fn conn ->
-        cond do
-          String.ends_with?(conn.request_path, "/states/") ->
-            Req.Test.json(conn, %{
-              "results" => [
-                %{"id" => "todo-uuid", "name" => "Todo"},
-                %{"id" => "ip-uuid", "name" => "In Progress"}
-              ]
-            })
+        if String.ends_with?(conn.request_path, "/states/") do
+          Req.Test.json(conn, %{
+            "results" => [
+              %{"id" => "todo-uuid", "name" => "Todo"},
+              %{"id" => "ip-uuid", "name" => "In Progress"}
+            ]
+          })
+        else
+          send(self(), :path_check)
 
-          true ->
-            send(self(), :path_check)
+          send(
+            self(),
+            {:final_call,
+             %{
+               method: conn.method,
+               path: conn.request_path,
+               query: conn.query_string
+             }}
+          )
 
-            send(
-              self(),
-              {:final_call,
-               %{
-                 method: conn.method,
-                 path: conn.request_path,
-                 query: conn.query_string
-               }}
-            )
-
-            Req.Test.json(conn, %{"results" => [%{"id" => "wi-1"}]})
+          Req.Test.json(conn, %{"results" => [%{"id" => "wi-1"}]})
         end
       end)
 
@@ -95,19 +96,17 @@ defmodule SymphonyElixir.Plane.ClientTest do
 
     test "with multiple state names appends repeated ?state=<a>&state=<b> query params" do
       Req.Test.stub(@stub_name, fn conn ->
-        cond do
-          String.ends_with?(conn.request_path, "/states/") ->
-            Req.Test.json(conn, %{
-              "results" => [
-                %{"id" => "todo-uuid", "name" => "Todo"},
-                %{"id" => "ip-uuid", "name" => "In Progress"},
-                %{"id" => "review-uuid", "name" => "In Review"}
-              ]
-            })
-
-          true ->
-            send(self(), {:final_query, conn.query_string})
-            Req.Test.json(conn, %{"results" => []})
+        if String.ends_with?(conn.request_path, "/states/") do
+          Req.Test.json(conn, %{
+            "results" => [
+              %{"id" => "todo-uuid", "name" => "Todo"},
+              %{"id" => "ip-uuid", "name" => "In Progress"},
+              %{"id" => "review-uuid", "name" => "In Review"}
+            ]
+          })
+        else
+          send(self(), {:final_query, conn.query_string})
+          Req.Test.json(conn, %{"results" => []})
         end
       end)
 
@@ -143,15 +142,13 @@ defmodule SymphonyElixir.Plane.ClientTest do
   describe "list_work_items/2 — bare project endpoint when no module configured" do
     test "uses /work-items/ when module_id is not set" do
       Req.Test.stub(@stub_name, fn conn ->
-        cond do
-          String.ends_with?(conn.request_path, "/states/") ->
-            Req.Test.json(conn, %{
-              "results" => [%{"id" => "todo-uuid", "name" => "Todo"}]
-            })
-
-          true ->
-            send(self(), {:final_path, conn.request_path, conn.query_string})
-            Req.Test.json(conn, %{"results" => [%{"id" => "wi-1"}]})
+        if String.ends_with?(conn.request_path, "/states/") do
+          Req.Test.json(conn, %{
+            "results" => [%{"id" => "todo-uuid", "name" => "Todo"}]
+          })
+        else
+          send(self(), {:final_path, conn.request_path, conn.query_string})
+          Req.Test.json(conn, %{"results" => [%{"id" => "wi-1"}]})
         end
       end)
 
@@ -167,13 +164,11 @@ defmodule SymphonyElixir.Plane.ClientTest do
 
     test "list_work_items with module_id routes through module-issues path" do
       Req.Test.stub(@stub_name, fn conn ->
-        cond do
-          String.ends_with?(conn.request_path, "/states/") ->
-            Req.Test.json(conn, %{"results" => []})
-
-          true ->
-            send(self(), {:final_path, conn.request_path})
-            Req.Test.json(conn, %{"results" => []})
+        if String.ends_with?(conn.request_path, "/states/") do
+          Req.Test.json(conn, %{"results" => []})
+        else
+          send(self(), {:final_path, conn.request_path})
+          Req.Test.json(conn, %{"results" => []})
         end
       end)
 

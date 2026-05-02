@@ -44,11 +44,13 @@ defmodule SymphonyElixir.Plane.Adapter do
 
   # ---------- Caching ----------
 
+  @spec start_link(keyword()) :: {:ok, pid()} | {:error, term()}
   def start_link(_opts \\ []) do
     Agent.start_link(fn -> %{} end, name: @cache_name)
   end
 
   @doc false
+  @spec reset_cache() :: :ok
   def reset_cache do
     case Process.whereis(@cache_name) do
       nil -> :ok
@@ -101,23 +103,29 @@ defmodule SymphonyElixir.Plane.Adapter do
   # configured — fetch the whole project). Errors only if a module name is configured but cannot
   # be resolved.
   defp module_id do
-    cache_get(:module_id, fn ->
-      direct = System.get_env("PLANE_MODULE_ID")
-      name = System.get_env("PLANE_MODULE_NAME")
+    cache_get(:module_id, &resolve_module_id/0)
+  end
 
-      cond do
-        is_binary(direct) and direct != "" ->
-          {:ok, direct}
+  defp resolve_module_id do
+    direct = System.get_env("PLANE_MODULE_ID")
+    name = System.get_env("PLANE_MODULE_NAME")
 
-        is_binary(name) and name != "" ->
-          with {:ok, pid} <- project_id() do
-            client_module().module_id_by_name(pid, name)
-          end
+    cond do
+      is_binary(direct) and direct != "" ->
+        {:ok, direct}
 
-        true ->
-          {:ok, nil}
-      end
-    end)
+      is_binary(name) and name != "" ->
+        resolve_module_id_by_name(name)
+
+      true ->
+        {:ok, nil}
+    end
+  end
+
+  defp resolve_module_id_by_name(name) do
+    with {:ok, pid} <- project_id() do
+      client_module().module_id_by_name(pid, name)
+    end
   end
 
   defp state_lookup do
@@ -182,22 +190,23 @@ defmodule SymphonyElixir.Plane.Adapter do
   def fetch_issue_states_by_ids(issue_ids) when is_list(issue_ids) do
     with {:ok, pid} <- project_id(),
          {:ok, ctx} <- normalization_ctx() do
-      results =
-        issue_ids
-        |> Enum.map(fn id ->
-          case client_module().get_work_item(pid, id) do
-            {:ok, payload} -> {:ok, Issue.from_payload(payload, ctx)}
-            err -> err
-          end
-        end)
+      collect_issues(issue_ids, pid, ctx)
+    end
+  end
 
-      case Enum.find(results, &match?({:error, _}, &1)) do
-        nil ->
-          {:ok, Enum.map(results, fn {:ok, issue} -> issue end)}
+  defp collect_issues(issue_ids, pid, ctx) do
+    results = Enum.map(issue_ids, &fetch_normalized_issue(&1, pid, ctx))
 
-        {:error, _} = err ->
-          err
-      end
+    case Enum.find(results, &match?({:error, _}, &1)) do
+      nil -> {:ok, Enum.map(results, fn {:ok, issue} -> issue end)}
+      {:error, _} = err -> err
+    end
+  end
+
+  defp fetch_normalized_issue(id, pid, ctx) do
+    case client_module().get_work_item(pid, id) do
+      {:ok, payload} -> {:ok, Issue.from_payload(payload, ctx)}
+      err -> err
     end
   end
 
@@ -225,27 +234,25 @@ defmodule SymphonyElixir.Plane.Adapter do
   # Plane stores comments as HTML. This is a deliberately simple transform: paragraphs and code
   # fences only. Replace with `Earmark` (a real markdown renderer) if you need full fidelity.
   @doc false
+  @spec markdown_to_html(term()) :: String.t()
   def markdown_to_html(md) when is_binary(md) do
     md
     |> String.split("\n\n", trim: true)
-    |> Enum.map(&format_block/1)
-    |> Enum.join("\n")
+    |> Enum.map_join("\n", &format_block/1)
   end
 
   def markdown_to_html(_), do: ""
 
   defp format_block(block) do
-    cond do
-      String.starts_with?(block, "```") ->
-        inner =
-          block
-          |> String.replace(~r/^```[a-z]*\n?/m, "")
-          |> String.replace(~r/```$/m, "")
+    if String.starts_with?(block, "```") do
+      inner =
+        block
+        |> String.replace(~r/^```[a-z]*\n?/m, "")
+        |> String.replace(~r/```$/m, "")
 
-        "<pre><code>#{escape_html(inner)}</code></pre>"
-
-      true ->
-        "<p>#{block |> escape_html() |> String.replace("\n", "<br/>")}</p>"
+      "<pre><code>#{escape_html(inner)}</code></pre>"
+    else
+      "<p>#{block |> escape_html() |> String.replace("\n", "<br/>")}</p>"
     end
   end
 
