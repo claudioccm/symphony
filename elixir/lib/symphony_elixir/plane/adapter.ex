@@ -61,8 +61,11 @@ defmodule SymphonyElixir.Plane.Adapter do
   defp cache_get(key, fallback_fn) do
     ensure_started()
 
-    case Agent.get(@cache_name, &Map.get(&1, key)) do
-      nil ->
+    case Agent.get(@cache_name, &Map.fetch(&1, key)) do
+      {:ok, val} ->
+        {:ok, val}
+
+      :error ->
         case fallback_fn.() do
           {:ok, val} ->
             Agent.update(@cache_name, &Map.put(&1, key, val))
@@ -71,9 +74,6 @@ defmodule SymphonyElixir.Plane.Adapter do
           err ->
             err
         end
-
-      val ->
-        {:ok, val}
     end
   end
 
