@@ -14,9 +14,7 @@ mkdir -p "$CONTEXT_DIR"
 plane_dump_comments "$CONTEXT_DIR/ticket-thread.md" 50
 
 # Refresh issue body — humans can edit the description while the card is in flight.
-plane_api GET "/projects/$SYMPHONY_PROJECT_ID/work-items/$SYMPHONY_ISSUE_ID/" \
-  | jq -r '.description_stripped // .description_html // ""' \
-  > "$CONTEXT_DIR/issue-body.md"
+plane_dump_issue_body "$CONTEXT_DIR/issue-body.md"
 
 # Surface env to the agent prompt builder.
 echo "SYMPHONY_TICKET_THREAD_FILE=$CONTEXT_DIR/ticket-thread.md"

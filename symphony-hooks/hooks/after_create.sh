@@ -17,9 +17,7 @@ plane_dump_comments "$CONTEXT_DIR/ticket-thread.md" 50
 
 # 2. Dump issue body for the agent.
 ISSUE_BODY_FILE="$CONTEXT_DIR/issue-body.md"
-plane_api GET "/projects/$SYMPHONY_PROJECT_ID/work-items/$SYMPHONY_ISSUE_ID/" \
-  | jq -r '.description_stripped // .description_html // ""' \
-  > "$ISSUE_BODY_FILE"
+plane_dump_issue_body "$ISSUE_BODY_FILE"
 
 # Export the path so subsequent hooks + the prompt builder can reference it.
 echo "SYMPHONY_TICKET_THREAD_FILE=$CONTEXT_DIR/ticket-thread.md"

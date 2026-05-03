@@ -65,19 +65,51 @@ plane_state_id_by_name() {
 }
 
 plane_dump_comments() {
-  # Usage: plane_dump_comments OUTPUT_FILE
+  # Usage: plane_dump_comments OUTPUT_FILE [LIMIT]
   # Writes the most recent N comments (oldest → newest) to the output file as plain text.
+  #
+  # Failure semantics (PRO-24): the curl/jq pipeline writes to a tempfile first and only
+  # atomically renames into place on success. A Plane API hiccup (transport error, error
+  # JSON body that breaks `jq`) returns non-zero WITHOUT clobbering the previous file —
+  # the calling hook can then `set -euo pipefail` and abort the attempt while leaving the
+  # prior `.symphony/ticket-thread.md` intact for the next retry.
   local out="$1"
   local limit="${2:-50}"
+  local tmp
+  tmp=$(mktemp "${out}.XXXXXX")
 
-  plane_api GET "/projects/$SYMPHONY_PROJECT_ID/work-items/$SYMPHONY_ISSUE_ID/comments/" \
+  if plane_api GET "/projects/$SYMPHONY_PROJECT_ID/work-items/$SYMPHONY_ISSUE_ID/comments/" \
     | jq -r --argjson limit "$limit" \
         '.results
          | sort_by(.created_at)
          | .[(-$limit):]
          | .[]
          | "[\(.created_at)] \(.actor_detail.display_name // "agent"): \(.comment_stripped)"' \
-    > "$out"
+    > "$tmp"; then
+    mv "$tmp" "$out"
+  else
+    rm -f "$tmp"
+    return 1
+  fi
+}
+
+plane_dump_issue_body() {
+  # Usage: plane_dump_issue_body OUTPUT_FILE
+  # Writes the issue body (description_stripped, falling back to description_html) to the
+  # output file. Same atomic-rename failure semantics as plane_dump_comments — a Plane API
+  # error leaves the previous file intact and returns non-zero.
+  local out="$1"
+  local tmp
+  tmp=$(mktemp "${out}.XXXXXX")
+
+  if plane_api GET "/projects/$SYMPHONY_PROJECT_ID/work-items/$SYMPHONY_ISSUE_ID/" \
+    | jq -r '.description_stripped // .description_html // ""' \
+    > "$tmp"; then
+    mv "$tmp" "$out"
+  else
+    rm -f "$tmp"
+    return 1
+  fi
 }
 
 # Convenience: convert markdown body to a minimal HTML body for Plane.
