@@ -65,28 +65,26 @@ You are working on a Plane card managed by Symphony.
 Identifier: {{ issue.identifier }}
 Title: {{ issue.title }}
 URL: {{ issue.url }}
+Branch: {{ issue.branch_name }} (Symphony will use this when you open a PR — do NOT switch branches)
+Attempt: {{ attempt }}
 
-Workspace: {{ workspace.path }}
-Branch:    {{ workspace.branch }} (already checked out — do NOT switch branches)
-Attempt:   {{ attempt }}
+Workspace and ticket-thread paths are in env vars set by Symphony hooks:
+  - SYMPHONY_WORKSPACE — your working directory (already cd-ed there)
+  - SYMPHONY_TICKET_THREAD_FILE — path to recent ticket comments (read this before doing anything)
+  - SYMPHONY_ISSUE_BODY_FILE — full card description
 
 Card description:
-{% if issue.description %}
-{{ issue.description }}
-{% else %}
-(No description provided.)
-{% endif %}
+{% if issue.description %}{{ issue.description }}{% else %}(No description provided.){% endif %}
 
-Recent ticket activity (read this carefully — it includes any prior agent questions and human
-answers from the "Needs Decision" pause/resume protocol):
-{% include_file ".symphony/ticket-thread.md" %}
+Read the ticket thread file first — it includes any prior agent questions and human answers
+from the "Needs Decision" pause/resume protocol.
 
 Run the `/lfg-symphony` command. It will:
   1. Plan the work via `ce-plan`.
-  2. Implement via `ce-work`, opening a PR against the `dev` branch.
+  2. Implement via `ce-work`, opening a PR against the default branch.
   3. Review via `ce-code-review` autofix mode.
   4. Resolve residual findings via `ce-resolve-pr-feedback`.
-  5. Auto-merge to `dev` once CI is green.
+  5. Auto-merge once CI is green.
 
 If you hit ambiguity that you cannot resolve from this card, the description, the ticket
 thread, or `docs/solutions/`: post a `❓ NEEDS DECISION` comment with options + a
