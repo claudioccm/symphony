@@ -49,9 +49,9 @@ hooks:
   timeout_ms: 60000
 
 codex:
-  # PRO-24: codex is a no-op `echo` for hook-lifecycle verification. PRO-25 will swap to
-  # `claude` with args ["-p", "/lfg-symphony", "--dangerously-skip-permissions"].
-  command: echo
+  # PRO-25: flipped from echo no-op to `claude` for the real /lfg-symphony pipeline.
+  command: claude
+  args: ["-p", "/lfg-symphony", "--dangerously-skip-permissions"]
   approval_policy: never
   thread_sandbox: workspace-write
 ---
