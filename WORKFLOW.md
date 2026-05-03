@@ -49,11 +49,13 @@ hooks:
   timeout_ms: 60000
 
 codex:
-  # PRO-25: codex.command runs a Codex App Server protocol bridge (bin/claude-bridge.sh)
-  # that translates JSON-RPC <-> `claude -p`. Symphony spawns this via `bash -lc` with cwd
-  # set to the per-card workspace (a checkout of this repo), so the relative path resolves.
-  # Symphony's WORKFLOW.md schema does NOT read an `args:` field; the bridge fills the gap.
-  command: bin/claude-bridge.sh
+  # PRO-25: codex.command runs a Codex App Server protocol bridge that translates JSON-RPC
+  # <-> `claude -p`. Symphony spawns this via `bash -lc` with cwd set to the per-card
+  # workspace (which Symphony creates as an empty directory; hooks only seed `.symphony/`).
+  # Use an absolute path so the bridge resolves regardless of workspace contents. Operators
+  # on other machines must edit this path to match their checkout. Symphony's WORKFLOW.md
+  # schema does NOT read an `args:` field; the bridge fills the gap.
+  command: /Users/claudiomendonca/Documents/GitHub/symphony/bin/claude-bridge.sh
   approval_policy: never
   thread_sandbox: workspace-write
 ---
