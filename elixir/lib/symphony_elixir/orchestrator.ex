@@ -9,6 +9,17 @@ defmodule SymphonyElixir.Orchestrator do
 
   alias SymphonyElixir.{AgentRunner, Config, StatusDashboard, Tracker, Workspace}
   alias SymphonyElixir.Linear.Issue
+  alias SymphonyElixir.Plane.Issue, as: PlaneIssue
+
+  @typedoc """
+  Any tracker issue struct accepted by the orchestrator. Linear and Plane
+  issues share the same fields; clauses pattern-match the shared map shape
+  and gate on `is_issue/1` instead of the struct name.
+  """
+  @type any_issue :: Issue.t() | PlaneIssue.t()
+
+  defguardp is_issue(value)
+            when is_struct(value, Issue) or is_struct(value, PlaneIssue)
 
   @continuation_retry_delay_ms 1_000
   @failure_retry_base_ms 10_000
@@ -298,7 +309,7 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   @doc false
-  @spec reconcile_issue_states_for_test([Issue.t()], term()) :: term()
+  @spec reconcile_issue_states_for_test([any_issue()], term()) :: term()
   def reconcile_issue_states_for_test(issues, %State{} = state) when is_list(issues) do
     reconcile_running_issue_states(issues, state, active_state_set(), terminal_state_set())
   end
@@ -308,21 +319,21 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   @doc false
-  @spec should_dispatch_issue_for_test(Issue.t(), term()) :: boolean()
-  def should_dispatch_issue_for_test(%Issue{} = issue, %State{} = state) do
+  @spec should_dispatch_issue_for_test(any_issue(), term()) :: boolean()
+  def should_dispatch_issue_for_test(issue, %State{} = state) when is_issue(issue) do
     should_dispatch_issue?(issue, state, active_state_set(), terminal_state_set())
   end
 
   @doc false
-  @spec revalidate_issue_for_dispatch_for_test(Issue.t(), ([String.t()] -> term())) ::
-          {:ok, Issue.t()} | {:skip, Issue.t() | :missing} | {:error, term()}
-  def revalidate_issue_for_dispatch_for_test(%Issue{} = issue, issue_fetcher)
-      when is_function(issue_fetcher, 1) do
+  @spec revalidate_issue_for_dispatch_for_test(any_issue(), ([String.t()] -> term())) ::
+          {:ok, any_issue()} | {:skip, any_issue() | :missing} | {:error, term()}
+  def revalidate_issue_for_dispatch_for_test(issue, issue_fetcher)
+      when is_issue(issue) and is_function(issue_fetcher, 1) do
     revalidate_issue_for_dispatch(issue, issue_fetcher, terminal_state_set())
   end
 
   @doc false
-  @spec sort_issues_for_dispatch_for_test([Issue.t()]) :: [Issue.t()]
+  @spec sort_issues_for_dispatch_for_test([any_issue()]) :: [any_issue()]
   def sort_issues_for_dispatch_for_test(issues) when is_list(issues) do
     sort_issues_for_dispatch(issues)
   end
@@ -344,7 +355,7 @@ defmodule SymphonyElixir.Orchestrator do
     )
   end
 
-  defp reconcile_issue_state(%Issue{} = issue, state, active_states, terminal_states) do
+  defp reconcile_issue_state(issue, state, active_states, terminal_states) when is_issue(issue) do
     cond do
       terminal_issue_state?(issue.state, terminal_states) ->
         Logger.info("Issue moved to terminal state: #{issue_context(issue)} state=#{issue.state}; stopping active agent")
@@ -373,7 +384,7 @@ defmodule SymphonyElixir.Orchestrator do
     visible_issue_ids =
       issues
       |> Enum.flat_map(fn
-        %Issue{id: issue_id} when is_binary(issue_id) -> [issue_id]
+        %{id: issue_id} = issue when is_issue(issue) and is_binary(issue_id) -> [issue_id]
         _ -> []
       end)
       |> MapSet.new()
@@ -402,7 +413,7 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp log_missing_running_issue(_state, _issue_id), do: :ok
 
-  defp refresh_running_issue_state(%State{} = state, %Issue{} = issue) do
+  defp refresh_running_issue_state(%State{} = state, issue) when is_issue(issue) do
     case Map.get(state.running, issue.id) do
       %{issue: _} = running_entry ->
         %{state | running: Map.put(state.running, issue.id, %{running_entry | issue: issue})}
@@ -533,7 +544,7 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp sort_issues_for_dispatch(issues) when is_list(issues) do
     Enum.sort_by(issues, fn
-      %Issue{} = issue ->
+      issue when is_issue(issue) ->
         {priority_rank(issue.priority), issue_created_at_sort_key(issue), issue.identifier || issue.id || ""}
 
       _ ->
@@ -544,19 +555,20 @@ defmodule SymphonyElixir.Orchestrator do
   defp priority_rank(priority) when is_integer(priority) and priority in 1..4, do: priority
   defp priority_rank(_priority), do: 5
 
-  defp issue_created_at_sort_key(%Issue{created_at: %DateTime{} = created_at}) do
+  defp issue_created_at_sort_key(%{created_at: %DateTime{} = created_at} = issue) when is_issue(issue) do
     DateTime.to_unix(created_at, :microsecond)
   end
 
-  defp issue_created_at_sort_key(%Issue{}), do: 9_223_372_036_854_775_807
+  defp issue_created_at_sort_key(issue) when is_issue(issue), do: 9_223_372_036_854_775_807
   defp issue_created_at_sort_key(_issue), do: 9_223_372_036_854_775_807
 
   defp should_dispatch_issue?(
-         %Issue{} = issue,
+         issue,
          %State{running: running, claimed: claimed} = state,
          active_states,
          terminal_states
-       ) do
+       )
+       when is_issue(issue) do
     candidate_issue?(issue, active_states, terminal_states) and
       !todo_issue_blocked_by_non_terminal?(issue, terminal_states) and
       !MapSet.member?(claimed, issue.id) and
@@ -568,7 +580,8 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp should_dispatch_issue?(_issue, _state, _active_states, _terminal_states), do: false
 
-  defp state_slots_available?(%Issue{state: issue_state}, running) when is_map(running) do
+  defp state_slots_available?(%{state: issue_state} = issue, running)
+       when is_issue(issue) and is_map(running) do
     limit = Config.max_concurrent_agents_for_state(issue_state)
     used = running_issue_count_for_state(running, issue_state)
     limit > used
@@ -580,7 +593,7 @@ defmodule SymphonyElixir.Orchestrator do
     normalized_state = normalize_issue_state(issue_state)
 
     Enum.count(running, fn
-      {_id, %{issue: %Issue{state: state_name}}} ->
+      {_id, %{issue: %{state: state_name} = issue}} when is_issue(issue) ->
         normalize_issue_state(state_name) == normalized_state
 
       _ ->
@@ -589,7 +602,7 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   defp candidate_issue?(
-         %Issue{
+         %{
            id: id,
            identifier: identifier,
            title: title,
@@ -598,7 +611,8 @@ defmodule SymphonyElixir.Orchestrator do
          active_states,
          terminal_states
        )
-       when is_binary(id) and is_binary(identifier) and is_binary(title) and is_binary(state_name) do
+       when is_issue(issue) and is_binary(id) and is_binary(identifier) and is_binary(title) and
+              is_binary(state_name) do
     issue_routable_to_worker?(issue) and
       active_issue_state?(state_name, active_states) and
       !terminal_issue_state?(state_name, terminal_states)
@@ -606,17 +620,17 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp candidate_issue?(_issue, _active_states, _terminal_states), do: false
 
-  defp issue_routable_to_worker?(%Issue{assigned_to_worker: assigned_to_worker})
-       when is_boolean(assigned_to_worker),
+  defp issue_routable_to_worker?(%{assigned_to_worker: assigned_to_worker} = issue)
+       when is_issue(issue) and is_boolean(assigned_to_worker),
        do: assigned_to_worker
 
   defp issue_routable_to_worker?(_issue), do: true
 
   defp todo_issue_blocked_by_non_terminal?(
-         %Issue{state: issue_state, blocked_by: blockers},
+         %{state: issue_state, blocked_by: blockers} = issue,
          terminal_states
        )
-       when is_binary(issue_state) and is_list(blockers) do
+       when is_issue(issue) and is_binary(issue_state) and is_list(blockers) do
     normalize_issue_state(issue_state) == "todo" and
       Enum.any?(blockers, fn
         %{state: blocker_state} when is_binary(blocker_state) ->
@@ -659,14 +673,14 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp dispatch_issue(%State{} = state, issue, attempt \\ nil, preferred_worker_host \\ nil) do
     case revalidate_issue_for_dispatch(issue, &Tracker.fetch_issue_states_by_ids/1, terminal_state_set()) do
-      {:ok, %Issue{} = refreshed_issue} ->
+      {:ok, refreshed_issue} when is_issue(refreshed_issue) ->
         do_dispatch_issue(state, refreshed_issue, attempt, preferred_worker_host)
 
       {:skip, :missing} ->
         Logger.info("Skipping dispatch; issue no longer active or visible: #{issue_context(issue)}")
         state
 
-      {:skip, %Issue{} = refreshed_issue} ->
+      {:skip, refreshed_issue} when is_issue(refreshed_issue) ->
         Logger.info("Skipping stale dispatch after issue refresh: #{issue_context(refreshed_issue)} state=#{inspect(refreshed_issue.state)} blocked_by=#{length(refreshed_issue.blocked_by)}")
 
         state
@@ -742,10 +756,10 @@ defmodule SymphonyElixir.Orchestrator do
     end
   end
 
-  defp revalidate_issue_for_dispatch(%Issue{id: issue_id}, issue_fetcher, terminal_states)
-       when is_binary(issue_id) and is_function(issue_fetcher, 1) do
+  defp revalidate_issue_for_dispatch(%{id: issue_id} = issue, issue_fetcher, terminal_states)
+       when is_issue(issue) and is_binary(issue_id) and is_function(issue_fetcher, 1) do
     case issue_fetcher.([issue_id]) do
-      {:ok, [%Issue{} = refreshed_issue | _]} ->
+      {:ok, [refreshed_issue | _]} when is_issue(refreshed_issue) ->
         if retry_candidate_issue?(refreshed_issue, terminal_states) do
           {:ok, refreshed_issue}
         else
@@ -846,7 +860,7 @@ defmodule SymphonyElixir.Orchestrator do
     end
   end
 
-  defp handle_retry_issue_lookup(%Issue{} = issue, state, issue_id, attempt, metadata) do
+  defp handle_retry_issue_lookup(issue, state, issue_id, attempt, metadata) when is_issue(issue) do
     terminal_states = terminal_state_set()
 
     cond do
@@ -884,7 +898,7 @@ defmodule SymphonyElixir.Orchestrator do
       {:ok, issues} ->
         issues
         |> Enum.each(fn
-          %Issue{identifier: identifier} when is_binary(identifier) ->
+          %{identifier: identifier} = issue when is_issue(issue) and is_binary(identifier) ->
             cleanup_issue_workspace(identifier)
 
           _ ->
@@ -1034,7 +1048,7 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp find_issue_by_id(issues, issue_id) when is_binary(issue_id) do
     Enum.find(issues, fn
-      %Issue{id: ^issue_id} ->
+      %{id: ^issue_id} = issue when is_issue(issue) ->
         true
 
       _ ->
@@ -1054,7 +1068,7 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp running_entry_session_id(_running_entry), do: "n/a"
 
-  defp issue_context(%Issue{id: issue_id, identifier: identifier}) do
+  defp issue_context(%{id: issue_id, identifier: identifier} = issue) when is_issue(issue) do
     "issue_id=#{issue_id} issue_identifier=#{identifier}"
   end
 
@@ -1303,12 +1317,12 @@ defmodule SymphonyElixir.Orchestrator do
     }
   end
 
-  defp retry_candidate_issue?(%Issue{} = issue, terminal_states) do
+  defp retry_candidate_issue?(issue, terminal_states) when is_issue(issue) do
     candidate_issue?(issue, active_state_set(), terminal_states) and
       !todo_issue_blocked_by_non_terminal?(issue, terminal_states)
   end
 
-  defp dispatch_slots_available?(%Issue{} = issue, %State{} = state) do
+  defp dispatch_slots_available?(issue, %State{} = state) when is_issue(issue) do
     available_slots(state) > 0 and state_slots_available?(issue, state.running)
   end
 

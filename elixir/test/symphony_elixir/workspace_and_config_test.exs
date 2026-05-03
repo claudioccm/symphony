@@ -558,6 +558,35 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     assert Orchestrator.should_dispatch_issue_for_test(issue, state)
   end
 
+  test "plane issue is dispatch-eligible (struct-agnostic orchestrator)" do
+    state = %Orchestrator.State{
+      max_concurrent_agents: 3,
+      running: %{},
+      claimed: MapSet.new(),
+      codex_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0},
+      retry_attempts: %{}
+    }
+
+    issue = %SymphonyElixir.Plane.Issue{
+      id: "plane-ready-1",
+      identifier: "PRO-23",
+      title: "Plane ready work",
+      state: "Todo",
+      blocked_by: []
+    }
+
+    assert Orchestrator.should_dispatch_issue_for_test(issue, state),
+           "Plane.Issue must be treated identically to Linear.Issue by the orchestrator"
+
+    sorted = Orchestrator.sort_issues_for_dispatch_for_test([issue])
+    assert [%SymphonyElixir.Plane.Issue{identifier: "PRO-23"}] = sorted
+
+    fetcher = fn ["plane-ready-1"] -> {:ok, [issue]} end
+
+    assert {:ok, %SymphonyElixir.Plane.Issue{identifier: "PRO-23"}} =
+             Orchestrator.revalidate_issue_for_dispatch_for_test(issue, fetcher)
+  end
+
   test "dispatch revalidation skips stale todo issue once a non-terminal blocker appears" do
     stale_issue = %Issue{
       id: "blocked-2",
