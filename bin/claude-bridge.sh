@@ -60,6 +60,17 @@ while IFS= read -r line; do
         '{id: ($id | tonumber), result: {turn: {id: $tid}}}')"
       log "turn/start ack id=$id turn_id=$turn_id thread=$thread_id title=$title"
 
+      # Symphony's hooks set SYMPHONY_* via a shim (lib/symphony-env.sh). The codex.command
+      # process inherits BEAM's env, NOT the per-hook shim env. Derive the same vars from
+      # cwd + .symphony/ paths + the JSON-RPC params so the prompt's env-var references
+      # resolve when claude runs.
+      export SYMPHONY_WORKSPACE="$(pwd)"
+      export SYMPHONY_TICKET_THREAD_FILE="$SYMPHONY_WORKSPACE/.symphony/ticket-thread.md"
+      export SYMPHONY_ISSUE_BODY_FILE="$SYMPHONY_WORKSPACE/.symphony/issue-body.md"
+      # Title arrives as "PRO-XX: <title>" — split on the first ": " to recover the identifier.
+      export SYMPHONY_ISSUE_IDENTIFIER="${title%%:*}"
+
+      log "env: workspace=$SYMPHONY_WORKSPACE identifier=$SYMPHONY_ISSUE_IDENTIFIER"
       log "invoking claude -p"
       if claude_output=$(claude -p --dangerously-skip-permissions <<< "$prompt" 2>&1); then
         log "claude exited 0 output_bytes=${#claude_output}"
