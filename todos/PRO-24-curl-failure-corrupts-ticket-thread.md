@@ -5,8 +5,50 @@ owner: downstream-resolver
 file: symphony-hooks/lib/plane.sh
 line: 73
 ticket: PRO-24
-status: residual
+status: resolved
+resolved_in: feature/PRO-24-lifecycle-hooks
 ---
+
+## Resolution (Step 4)
+
+Fixed in `symphony-hooks/lib/plane.sh` and the two hook scripts that consumed the
+issue-body endpoint inline (`after_create.sh`, `before_run.sh`).
+
+### Changes
+- `plane_dump_comments` now writes to a `mktemp`-allocated tempfile and only `mv`s
+  into the destination on success of the curl→jq pipeline. On failure it `rm -f`s
+  the tempfile and `return 1`s. The previous file is preserved.
+- Added a sibling helper `plane_dump_issue_body OUTPUT_FILE` with identical
+  semantics, factoring the duplicated `description_stripped // .description_html`
+  logic out of the hooks.
+- `after_create.sh:19-22` and `before_run.sh:17-19` switched from the inline
+  `plane_api | jq > "$file"` (vulnerable to the same truncate-then-fail) to the
+  new helper. Justified by the constraint that hook scripts can change when
+  needed to surface the new error path.
+
+### Tests run
+
+1. **Happy path (synthetic hook test from the spec):**
+   `after_create.sh` against PRO-23, fresh workspace → exit 0,
+   `.symphony/ticket-thread.md` is non-empty.
+2. **Corruption test, transport failure:**
+   `PLANE_BASE_URL=http://127.0.0.1:1` (closed port) on top of a sentinel-populated
+   `ticket-thread.md` → curl exits 7, hook returns 1, sentinel preserved verbatim,
+   no leftover `*.XXXXXX` tempfiles.
+3. **Corruption test, bad auth (the exact scenario in this todo):**
+   `PLANE_API_KEY=invalid-key-xyz` → Plane returns a 4xx error JSON, jq fails on
+   `Cannot iterate over null`, hook returns 1, sentinel preserved, no leftover
+   tempfiles.
+
+### Host install
+`~/.claude/symphony-hooks/lib/plane.sh`, `hooks/after_create.sh`, and
+`hooks/before_run.sh` synced via `cp`.
+
+### Failure-mode contract chosen
+Option (a) from the todo: preserve the previous file AND fail the attempt
+non-zero. The hook now propagates the curl/jq failure up so Symphony can retry,
+while the prior `.symphony/ticket-thread.md` survives intact for the next
+attempt's "Needs Decision" pause/resume context.
 
 # `plane_dump_comments` can leave `.symphony/ticket-thread.md` empty on Plane API errors
 

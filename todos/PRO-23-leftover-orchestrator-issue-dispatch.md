@@ -5,9 +5,38 @@ owner: human
 file: elixir/lib/symphony_elixir/orchestrator.ex
 line: (alias + pattern-match site)
 ticket: PRO-23 (NOT PRO-24)
-status: residual
+status: wontfix-here
+followup_ticket: needs-new-ticket
 out_of_scope: true
 ---
+
+## Resolution (Step 4)
+
+**Marked `wontfix-here / followup`. No code changes made under this card.**
+
+### Rationale
+- The PRO-24 implementation plan explicitly declares Elixir code under
+  `elixir/lib/symphony_elixir/` out of scope. Touching `orchestrator.ex` here
+  would (a) blow that scope and (b) expand the diff into Elixir code with zero
+  overlap with the bash-hook surface area under review on this PR.
+- This is a PRO-23 leftover (the alias `Linear.Issue` predates the Plane adapter
+  struct and was never updated to dispatch on `%Plane.Issue{}`), not anything
+  introduced by PRO-24.
+- The Step 4 instructions explicitly say: "Do NOT modify Elixir code. The plan
+  explicitly puts Elixir changes out of scope. This needs a separate ticket."
+
+### Required follow-up (separate ticket)
+File a new Plane card titled
+`fix(symphony): orchestrator dispatches all work-items as Linear.Issue`
+against the `PRO` project, blocking PRO-25 (the full `/lfg-symphony` end-to-end
+run against Plane cards). Body should reference this todo file
+(`todos/PRO-23-leftover-orchestrator-issue-dispatch.md`) and the suggested fix
+(option 1: drop the alias and pattern-match on fully-qualified module names; or
+option 2: define a `SymphonyElixir.Issue` protocol and dispatch via it).
+
+Until that ticket lands, every PRO-25 work-loop attempt against a Plane card
+will appear to start (workspace allocated, hooks fire) and immediately exit
+because the case-clause silently drops `%Plane.Issue{}` structs.
 
 # `orchestrator.ex` aliases `Linear.Issue` so `%Plane.Issue{}` never dispatches
 
