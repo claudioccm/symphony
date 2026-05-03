@@ -49,9 +49,11 @@ hooks:
   timeout_ms: 60000
 
 codex:
-  # PRO-25: flipped from echo no-op to `claude` for the real /lfg-symphony pipeline.
-  command: claude
-  args: ["-p", "/lfg-symphony", "--dangerously-skip-permissions"]
+  # PRO-25: codex.command runs a Codex App Server protocol bridge (bin/claude-bridge.sh)
+  # that translates JSON-RPC <-> `claude -p`. Symphony spawns this via `bash -lc` with cwd
+  # set to the per-card workspace (a checkout of this repo), so the relative path resolves.
+  # Symphony's WORKFLOW.md schema does NOT read an `args:` field; the bridge fills the gap.
+  command: bin/claude-bridge.sh
   approval_policy: never
   thread_sandbox: workspace-write
 ---
